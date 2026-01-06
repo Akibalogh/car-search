@@ -661,16 +661,16 @@ def main():
         lambda x: compute_inventory_score(x, dealer_stats['listings'])
     )
     
-    # Apply 30-minute cutoff: filter out dealers with known distance > 30 min
-    # (Keep those with unknown distance for now)
+    # Apply STRICT 30-minute cutoff: filter out dealers with known distance > 30 min
+    # Also filter out dealers without distance data (can't verify they're within 30 min)
     before_cutoff = len(dealer_stats)
     dealer_stats = dealer_stats[
-        (dealer_stats['driving_time_minutes'].isna()) | 
+        (dealer_stats['driving_time_minutes'].notna()) & 
         (dealer_stats['driving_time_minutes'] <= DRIVING_TIME_CUTOFF)
     ].copy()
     after_cutoff = len(dealer_stats)
     if before_cutoff > after_cutoff:
-        print(f"Filtered out {before_cutoff - after_cutoff} dealers over 30-minute cutoff")
+        print(f"Filtered out {before_cutoff - after_cutoff} dealers (over 30-minute cutoff or missing distance data)")
     
     # Composite score
     dealer_stats['composite_score'] = (
