@@ -1,224 +1,144 @@
-# TrueCar Vehicle Scraper
+# TrueCar Scraper & Dealer Ranking System
 
-A web scraper to extract vehicle and dealer information from TrueCar listing pages and consolidate data from multiple Excel files into a single master Excel file.
+A comprehensive web scraping and ranking system for TrueCar vehicle listings with intelligent dealer evaluation based on pricing fairness, Google reviews, distance, and inventory.
 
-## Current Status
+## Features
 
-### ✅ Completed
-- **Session Management**: Manual login script successfully saves TrueCar session (`simple_login.py`)
-- **Session File**: Valid session saved with 51 cookies (`truecar_session.json`)
-- **Scraper Code Structure**: Complete scraping logic for all required fields
-- **Data Extraction Logic**: Regex patterns and extraction functions for:
-  - Vehicle information (Make, Model, Trim, Year, VIN, Stock Number, Colors, MPG)
-  - Dealer information (Name, Address)
-  - Pricing information (Lease Monthly, MSRP, List Price, Dealer Discount, Cash Price, Finance Monthly)
+### 🚗 Web Scraping
+- **TrueCar Listings Scraper**: Extracts vehicle and dealer information from TrueCar detail pages
+- **Multi-method Extraction**: 100% dealer name extraction using DOM selectors, JSON-LD, and pattern matching
+- **Price Extraction**: Full price extraction with priority fallback (list_price → cash_price → MSRP)
+- **Lease Price Extraction**: 6-method approach for maximum coverage
+- **Session Management**: Persistent authentication using Playwright session state
 
-### ⚠️ Known Issues
-- **Browser Automation**: Playwright browser closes immediately when running programmatically (works for manual login)
-- **Local Environment**: Browser automation has compatibility issues on current system
-- **Recommendation**: Use cloud service or different machine for production scraping
+### 📊 Dealer Ranking
+- **Composite Scoring System**: Ranks dealers using weighted factors:
+  - Pricing Fairness (35%): Compares dealer prices to market median
+  - Google Reviews (35%): Star ratings and review volume
+  - Distance/Proximity (25%): Driving time from White Plains, NY
+  - Inventory (5%): Number of listings
+- **Distance Filtering**: 30-minute driving time cutoff
+- **Address & Review Lookup**: Automated Google Maps/Search integration
 
-## Project Structure
-
-```
-car-search/
-├── README.md                          # This file
-├── PRD.md                            # Product Requirements Document
-├── Accord.xlsx                       # Input file (98 URLs)
-├── Altima.xlsx                       # Input file (92 URLs)
-├── Camry.xlsx                        # Input file (76 URLs)
-├── impreza.xlsx                      # Input file (71 URLs)
-├── Mazda3.xlsx                       # Input file (80 URLs)
-├── truecar_session.json              # Saved login session (51 cookies)
-├── simple_login.py                   # ✅ WORKING: Manual login script
-├── scraper_with_manual_login.py      # Scraper using Playwright (browser closes)
-├── scraper_selenium.py               # Selenium scraper (incomplete)
-└── scraper_selenium_cookies.py       # Selenium with cookie conversion (incomplete)
-```
-
-## Setup
+## Quick Start
 
 ### Prerequisites
 - Python 3.9+
-- Playwright (`pip install playwright && playwright install chromium`)
-- pandas (`pip install pandas openpyxl`)
+- Playwright
+- Chrome browser (system installation)
 
 ### Installation
 ```bash
-cd /Users/akibalogh/apps/car-search
-pip install playwright pandas openpyxl
+# Install dependencies
+pip install pandas openpyxl playwright numpy
+
+# Install Playwright browsers
 playwright install chromium
 ```
 
-## Usage
+### Usage
 
-### Step 1: Save Your Login Session (Required - One Time)
+1. **Save TrueCar Session** (one-time setup):
+   ```bash
+   python3 simple_login.py
+   # Manually log in to TrueCar in the browser window
+   ```
 
-Run the manual login script to save your TrueCar session:
+2. **Run Scraper**:
+   ```bash
+   python3 full_scraper.py
+   ```
 
-```bash
-python3 simple_login.py
+3. **Rank Dealers**:
+   ```bash
+   python3 rank_dealers.py
+   ```
+
+4. **Check Results**:
+   - `scraped_car_data.xlsx`: All scraped vehicle data
+   - `ranked_dealers.xlsx`: Ranked dealer table with scores
+
+## Project Structure
+
+### Main Scripts
+- `full_scraper.py`: Main scraper with all improvements
+- `simple_login.py`: Manual login to save session state
+- `rank_dealers.py`: Dealer ranking with composite scoring
+- `monitor_scraper.py`: Monitor scraper progress
+- `verify_results.py`: Verify and analyze scraped results
+
+### Documentation
+- `PRD.md`: Product Requirements Document
+- `RANKING_README.md`: Detailed ranking system documentation
+- `DATA_QUALITY_REPORT.md`: Data quality analysis
+- `QUICK_START.md`: Quick start guide
+
+## Data Extraction
+
+### Extracted Fields
+- **Required**: Dealer Name, Make, Model, Trim, Year, Full Price, Lease Monthly Payment, URL
+- **Optional**: VIN, Stock Number, MSRP, List Price, Cash Price, Exterior/Interior Color, MPG
+
+### Extraction Methods
+- **Dealer Name**: 5-method approach (DOM selectors, JSON-LD, HTML patterns, brand+location, contextual)
+- **Full Price**: Priority fallback system (99.5% coverage)
+- **Lease Price**: 6-method approach (29.4% coverage - TrueCar limitation)
+
+## Ranking System
+
+### Scoring Formula
+```
+composite_score = 0.35 × reviews_score 
+                + 0.35 × fairness_score 
+                + 0.25 × proximity_score 
+                + 0.05 × inventory_score
 ```
 
-**Steps:**
-1. Browser window will open
-2. Log in to TrueCar manually in the browser
-3. Once logged in, press ENTER in the terminal
-4. Session will be saved to `truecar_session.json`
+### Fairness Calculation
+- Computes median price per vehicle spec (year|make|model|trim)
+- Calculates relative percentage vs median for each listing
+- Scores dealers based on pricing below/above market median
 
-**Note:** This works perfectly! The session file contains 51 cookies and is valid.
+### Distance Calculation
+- Driving distance and time from White Plains, NY 10601
+- 30-minute strict cutoff
+- Proximity score: 0-100 based on driving time
 
-### Step 2: Run the Scraper
+## Performance
 
-**⚠️ Current Issue:** The automated scraper has browser closing issues on local system. 
+- **Scraping**: 417 URLs processed in ~7-10 minutes
+- **Dealer Name Extraction**: 100% success rate
+- **Full Price Extraction**: ~99.5% coverage
+- **Lease Price Extraction**: ~29.4% coverage (TrueCar limitation)
+- **Error Rate**: 0%
 
-To test the scraper structure (will fail due to browser closing):
-```bash
-python3 scraper_with_manual_login.py
-```
+## Output Files
 
-## Free Cloud Services Options
+- `scraped_car_data.xlsx`: Complete scraped vehicle data
+- `ranked_dealers.xlsx`: Ranked dealer table with all scores
+- `dealer_info_cache.json`: Cached dealer info (addresses, reviews, distances)
 
-Since browser automation has issues locally, here are free cloud options:
+## Configuration
 
-### Option 1: Google Colab (Recommended - Free)
-- **Pros:** Free, no setup needed, browser automation works well
-- **Setup:** Upload code files, install packages, run
-- **Limitations:** Session timeout after inactivity, but can save progress
-- **Link:** https://colab.research.google.com/
+- **Concurrent Browsers**: 2 (optimized for memory)
+- **Rate Limiting**: 2.0 seconds between requests
+- **Timeout**: 120 seconds per page
+- **Checkpoint**: Saves progress every 10 URLs
 
-### Option 2: GitHub Codespaces (Free Tier)
-- **Pros:** Full VS Code environment, 60 hours/month free
-- **Setup:** Create repository, enable Codespaces
-- **Limitations:** 60 hours/month free tier
+## Known Limitations
 
-### Option 3: Replit (Free Tier)
-- **Pros:** Easy to use, browser automation support
-- **Setup:** Create new Repl, upload files
-- **Limitations:** Some resource limits
+- **Lease Price Coverage**: Only ~29.4% of listings display lease prices (TrueCar limitation)
+- **Address Extraction**: 37.5% coverage (Google Maps extraction limitations)
+- **Review Counts**: 20.8% coverage (Google search extraction limitations)
 
-### Option 4: AWS Free Tier / Google Cloud Free Tier
-- **Pros:** Full VM control
-- **Setup:** Create EC2/Compute Engine instance
-- **Limitations:** Limited free hours per month
+## License
 
-## Data Output
+This project is for personal/educational use. Please respect TrueCar's terms of service and rate limits.
 
-The scraper will produce a single Excel file (`scraped_car_data.xlsx`) with the following columns:
+## Author
 
-### Required Fields (per PRD)
-- **Make** (e.g., Honda, Toyota, Nissan)
-- **Model** (e.g., Accord, Camry, Altima)
-- **Trim** (e.g., SE, EX, Sport)
-- **Year**
-- **Dealer Name** (requires authentication)
-- **Dealer Address** (requires authentication)
-- **Lease Monthly Payment** (primary requirement)
+Akibalogh
 
-### Additional Fields Extracted
-- VIN
-- Stock Number
-- Exterior Color
-- Interior Color
-- MPG (city/highway)
-- MSRP
-- List Price
-- Dealer Discount
-- Cash Price
-- Finance Monthly Payment
-- Source File
-- URL
-- Scrape Timestamp
+## Repository
 
-## Scraping Specifications
-
-- **Total URLs**: 417 (from 5 Excel files)
-- **Rate Limiting**: 1-2 seconds delay between requests
-- **Concurrency**: 3-5 concurrent browser instances (planned)
-- **Deduplication**: VIN-first, fallback to Make+Model+Trim+Year+Dealer+Stock
-- **Progress Saving**: Periodic checkpoints every N URLs
-- **Error Handling**: Log errors, continue processing, include errors in output
-
-## Code Files
-
-### `simple_login.py` ✅ WORKING
-- Manual login script
-- Opens browser, waits for user login, saves session
-- **Status:** Fully functional
-
-### `scraper_with_manual_login.py` ⚠️ BROWSER CLOSES
-- Full scraper using Playwright
-- Uses saved session file
-- Extracts all required fields
-- **Status:** Code is correct, but browser closes immediately on local system
-
-### `full_scraper.py` ✅ COMPLETE
-- Full production scraper
-- Processes all 5 Excel files (417 URLs)
-- Concurrent scraping (3 browsers)
-- Deduplication logic (VIN-first, fallback)
-- Progress checkpoint saving
-- Error handling and logging
-- Final consolidated Excel output
-- **Status:** Code complete, ready to run on cloud service or working browser environment
-
-## Troubleshooting
-
-### Browser Closes Immediately
-- **Issue:** Playwright/Selenium browsers close before scraping
-- **Workaround:** Use cloud service (Google Colab recommended)
-- **Alternative:** Try on different machine/environment
-
-### Session Not Found
-- Make sure `truecar_session.json` exists
-- Run `python3 simple_login.py` first to save session
-
-### ChromeDriver Version Mismatch (Selenium)
-- Use `webdriver-manager` (already in code)
-- Or manually update ChromeDriver
-
-## Next Steps
-
-1. **For Cloud Service:**
-   - Upload code files to Google Colab
-   - Upload `truecar_session.json`
-   - Install packages: `!pip install playwright pandas openpyxl`
-   - Install browser: `!playwright install chromium`
-   - Run scraper
-
-2. **For Local:**
-   - Try on different machine
-   - Or wait for system/browser updates
-   - Code structure is ready, just needs stable browser environment
-
-3. **Complete Full Scraper:**
-   - Once browser automation works:
-     - Add concurrent scraping (3-5 browsers)
-     - Add deduplication logic
-     - Add progress checkpoints
-     - Process all 417 URLs
-     - Generate final Excel output
-
-## Credentials
-
-**TrueCar Login:**
-- Email: `akibalogh@gmail.com`
-- Password: `wtw-MWA@avf3khk.zpk`
-
-**Note:** Session file (`truecar_session.json`) contains valid cookies and can be reused.
-
-## Files Summary
-
-- **Input Files**: 5 Excel files (Accord, Altima, Camry, impreza, Mazda3) = 417 URLs total
-- **Session File**: `truecar_session.json` (16KB, 51 cookies, valid)
-- **Login Script**: `simple_login.py` (works perfectly)
-- **Scraper Script**: `scraper_with_manual_login.py` (code ready, browser issue)
-
-## Contact / Support
-
-If you encounter issues:
-1. Verify session file exists and is valid
-2. Try cloud service (Google Colab recommended)
-3. Check browser automation compatibility on your system
-4. Review error messages in terminal output
-
+https://github.com/Akibalogh/car-search
