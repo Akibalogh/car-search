@@ -371,28 +371,16 @@ def get_google_reviews_and_address(dealer_name: str, browser_context) -> Dict:
 
 
 def compute_reviews_score(rating: Optional[float], review_count: Optional[int]) -> float:
-    """Convert Google reviews to 0-100 score."""
-    if rating is None or review_count is None:
+    """Convert Google reviews to 0-100 score (rating only - review count removed due to insufficient data)."""
+    if rating is None:
         return 0.0
     
     # Rating score: 3.0 stars -> 0, 5.0 -> 100
+    # Only use rating since review count data is insufficient (only 38.5% coverage)
     rating_score = ((rating - 3.0) / (5.0 - 3.0)) * 100
     rating_score = max(0, min(100, rating_score))
     
-    # Volume score: log scaling
-    if review_count < 50:
-        volume_score = 0
-    else:
-        volume_score = (math.log10(review_count) - math.log10(50)) / (math.log10(5000) - math.log10(50)) * 100
-        volume_score = max(0, min(100, volume_score))
-    
-    reviews_score = 0.7 * rating_score + 0.3 * volume_score
-    
-    # Apply penalty for low review count
-    if review_count < 50:
-        reviews_score *= 0.6
-    
-    return reviews_score
+    return rating_score
 
 
 def get_distance_and_time(origin: str, destination: str, browser_context) -> Tuple[Optional[float], Optional[float]]:
@@ -744,7 +732,7 @@ def main():
     print("="*80)
     
     dealer_stats['reviews_score'] = dealer_stats.apply(
-        lambda row: compute_reviews_score(row['google_rating'], row['google_review_count']), 
+        lambda row: compute_reviews_score(row['google_rating'], None),  # review_count removed - insufficient data
         axis=1
     )
     dealer_stats['proximity_score'] = dealer_stats['driving_time_minutes'].apply(compute_proximity_score)
@@ -786,10 +774,11 @@ def main():
     
     output_cols = [
         'rank', 'dealer_name', 'address', 'driving_time_minutes', 'distance_miles',
-        'google_rating', 'google_review_count', 'listings', 'unique_specs',
+        'google_rating', 'listings', 'unique_specs',
         'median_rel_pct', 'pct_below_median', 'fairness_score',
         'reviews_score', 'proximity_score', 'inventory_score', 'composite_score'
     ]
+    # Note: google_review_count removed from output - insufficient data (only 38.5% coverage)
     
     output_df = dealer_stats[output_cols].copy()
     
@@ -819,15 +808,15 @@ def main():
         print(f"\n{row['rank']}. {row['dealer_name']}")
         print(f"   Address: {row['address']}")
         print(f"   Distance: {row['distance_miles']:.1f} miles ({row['driving_time_minutes']:.0f} min)")
-        print(f"   Google: {row['google_rating']:.1f} stars ({row['google_review_count']:.0f} reviews)")
+        print(f"   Google Rating: {row['google_rating']:.1f}★")
         print(f"   Pricing: {row['median_rel_pct']:.1f}% vs median ({row['pct_below_median']:.1f}% below median)")
         print(f"   Inventory: {row['listings']:.0f} listings")
         print(f"   Composite Score: {row['composite_score']:.1f}/100")
         
         # Why this dealer
         reasons = []
-        if row['google_rating'] >= 4.0 and row['google_review_count'] >= 100:
-            reasons.append(f"Strong reviews ({row['google_rating']:.1f}★, {row['google_review_count']:.0f} reviews)")
+        if row['google_rating'] >= 4.0:
+            reasons.append(f"Strong rating ({row['google_rating']:.1f}★)")
         if row['median_rel_pct'] < 0:
             reasons.append(f"Fair pricing ({row['median_rel_pct']:.1f}% below median)")
         if row['driving_time_minutes'] <= 20:
