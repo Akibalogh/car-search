@@ -1,0 +1,43 @@
+# Sensitive data
+truecar_session.json
+dealer_info_cache.json
+
+# Data files
+*.xlsx
+*.csv
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Checkpoints
+scraping_checkpoint.json
+
+# Backup files
+*.bak
+*.backup
+
+# Test outputs
+test_*.xlsx
+
