@@ -397,100 +397,165 @@ def compute_reviews_score(rating: Optional[float], review_count: Optional[int]) 
 
 def get_distance_and_time(origin: str, destination: str, browser_context) -> Tuple[Optional[float], Optional[float]]:
     """Step 4: Get driving distance (miles) and time (minutes) from origin to destination."""
-    try:
-        # Use Google Maps directions (more reliable)
-        directions_url = f"https://www.google.com/maps/dir/{quote_plus(origin)}/{quote_plus(destination)}"
-        
-        page = browser_context.new_page()
-        page.goto(directions_url, wait_until="domcontentloaded", timeout=30000)
-        time.sleep(5)  # Wait for directions to load
-        
-        page_text = page.inner_text('body')
-        content = page.content()
-        current_url = page.url
-        
-        distance_miles = None
-        time_minutes = None
-        
-        # Google Maps shows distance and time prominently in the directions panel
-        # Look for patterns like "15.2 mi" and "25 min"
-        
-        # Try to find distance and time together
-        combined_patterns = [
-            r'(\d+\.?\d*)\s*(?:miles?|mi\.?)[^\d]*(\d+)\s*(?:min(?:utes?)?|mins?)',
-            r'(\d+)\s*(?:min(?:utes?)?|mins?)[^\d]*(\d+\.?\d*)\s*(?:miles?|mi\.?)',
-        ]
-        for pattern in combined_patterns:
-            match = re.search(pattern, page_text, re.I)
-            if match:
-                try:
-                    val1 = match.group(1)
-                    val2 = match.group(2)
-                    # Determine which is distance and which is time
-                    if 'mi' in match.group(0).lower() or 'mile' in match.group(0).lower():
-                        # First might be distance, second time
-                        if float(val1) < 200:  # Reasonable distance
-                            distance_miles = float(val1)
-                        if int(val2) < 300:  # Reasonable time
-                            time_minutes = int(val2)
-                    else:
-                        # First might be time, second distance
-                        if int(val1) < 300:
-                            time_minutes = int(val1)
-                        if float(val2) < 200:
-                            distance_miles = float(val2)
-                    if distance_miles and time_minutes:
-                        break
-                except:
-                    continue
-        
-        # If not found together, search separately
-        if not distance_miles:
-            distance_patterns = [
-                r'(\d+\.?\d*)\s*(?:miles?|mi\.?)',
-                r'(\d+\.?\d*)\s*mi\b',
-            ]
-            for pattern in distance_patterns:
-                matches = re.findall(pattern, page_text, re.I)
-                for match in matches:
-                    try:
-                        dist = float(match)
-                        if 0.1 <= dist <= 200:  # Reasonable range
-                            distance_miles = dist
-                            break
-                    except:
-                        continue
-                if distance_miles:
-                    break
-        
-        if not time_minutes:
-            time_patterns = [
-                r'(\d+)\s*(?:min(?:utes?)?|mins?)',
-                r'(\d+)\s*min\b',
-            ]
-            for pattern in time_patterns:
-                matches = re.findall(pattern, page_text, re.I)
-                for match in matches:
-                    try:
-                        t = int(match)
-                        if 1 <= t <= 300:  # Reasonable range
-                            time_minutes = t
-                            break
-                    except:
-                        continue
-                if time_minutes:
-                    break
-        
-        page.close()
-        return distance_miles, time_minutes
-        
-    except Exception as e:
-        print(f"  Error getting distance for {destination}: {e}")
+    distance_miles = None
+    time_minutes = None
+    
+    # Try multiple methods
+    methods = [
+        ("Google Maps Directions", f"https://www.google.com/maps/dir/{quote_plus(origin)}/{quote_plus(destination)}"),
+        ("Google Search Distance", f"https://www.google.com/search?q={quote_plus(f'driving distance from {origin} to {destination}')}"),
+    ]
+    
+    for method_name, url in methods:
         try:
+            page = browser_context.new_page()
+            page.goto(url, wait_until="domcontentloaded", timeout=30000)
+            time.sleep(6)  # Wait longer for content to load
+            
+            # Get page content
+            page_text = page.inner_text('body')
+            content = page.content()
+            
+            # Method 1: Look for structured data in HTML
+            # Google Maps often has data attributes or structured content
+            try:
+                # Try to find distance/time in data attributes
+                distance_elem = page.query_selector('[data-value*="mi"], [aria-label*="mile"], [aria-label*="minute"]')
+                if distance_elem:
+                    aria_label = distance_elem.get_attribute('aria-label')
+                    if aria_label:
+                        # Extract from aria-label
+                        dist_match = re.search(r'(\d+\.?\d*)\s*(?:miles?|mi\.?)', aria_label, re.I)
+                        time_match = re.search(r'(\d+)\s*(?:min(?:utes?)?|mins?)', aria_label, re.I)
+                        if dist_match:
+                            distance_miles = float(dist_match.group(1))
+                        if time_match:
+                            time_minutes = int(time_match.group(1))
+            except:
+                pass
+            
+            # Method 2: Extract from visible text with better patterns - check line by line
+            if not distance_miles or not time_minutes:
+                # Split text into lines and look for lines containing both distance and time
+                lines = page_text.split('\n')
+                for i, line in enumerate(lines):
+                    # Check if line contains both distance and time indicators
+                    if ('mi' in line.lower() or 'mile' in line.lower()) and ('min' in line.lower()):
+                        dist_match = re.search(r'(\d+\.?\d*)\s*(?:miles?|mi\.?)', line, re.I)
+                        time_match = re.search(r'(\d+)\s*(?:min(?:utes?)?|mins?)', line, re.I)
+                        if dist_match and time_match:
+                            try:
+                                dist = float(dist_match.group(1))
+                                t = int(time_match.group(1))
+                                if 0.1 <= dist <= 200 and 1 <= t <= 300:
+                                    distance_miles = dist
+                                    time_minutes = t
+                                    break
+                            except:
+                                continue
+                    # Also check current line + next line (they might be on separate lines)
+                    if i < len(lines) - 1:
+                        combined = line + ' ' + lines[i+1]
+                        dist_match = re.search(r'(\d+\.?\d*)\s*(?:miles?|mi\.?)', combined, re.I)
+                        time_match = re.search(r'(\d+)\s*(?:min(?:utes?)?|mins?)', combined, re.I)
+                        if dist_match and time_match:
+                            try:
+                                dist = float(dist_match.group(1))
+                                t = int(time_match.group(1))
+                                if 0.1 <= dist <= 200 and 1 <= t <= 300:
+                                    distance_miles = dist
+                                    time_minutes = t
+                                    break
+                            except:
+                                continue
+                
+                # If still not found, try combined patterns on full text
+                if not distance_miles or not time_minutes:
+                    combined_patterns = [
+                        r'(\d+\.?\d*)\s*(?:miles?|mi\.?)[,\s]+(\d+)\s*(?:min(?:utes?)?|mins?)',
+                        r'(\d+)\s*(?:min(?:utes?)?|mins?)[,\s]+(\d+\.?\d*)\s*(?:miles?|mi\.?)',
+                        r'(\d+\.?\d*)\s*mi[^\d]*(\d+)\s*min',
+                        r'(\d+)\s*min[^\d]*(\d+\.?\d*)\s*mi',
+                    ]
+                    
+                    for pattern in combined_patterns:
+                        matches = re.findall(pattern, page_text, re.I)
+                        for match in matches:
+                            try:
+                                val1, val2 = match
+                                # Determine which is distance and which is time
+                                if 'mi' in pattern or 'mile' in pattern:
+                                    dist = float(val1)
+                                    t = int(val2)
+                                else:
+                                    t = int(val1)
+                                    dist = float(val2)
+                                
+                                # Validate ranges
+                                if 0.1 <= dist <= 200 and 1 <= t <= 300:
+                                    distance_miles = dist
+                                    time_minutes = t
+                                    break
+                            except:
+                                continue
+                        if distance_miles and time_minutes:
+                            break
+            
+            # Method 3: Search separately if not found together
+            if not distance_miles:
+                # Look for distance patterns - be more specific
+                distance_patterns = [
+                    r'(\d+\.?\d*)\s*(?:miles?|mi\.?)\b',
+                    r'(\d+\.?\d*)\s*mi\b',
+                    r'Distance[:\s]+(\d+\.?\d*)\s*(?:miles?|mi\.?)',
+                ]
+                for pattern in distance_patterns:
+                    matches = re.findall(pattern, page_text, re.I)
+                    for match in matches:
+                        try:
+                            dist = float(match)
+                            if 0.1 <= dist <= 200:
+                                distance_miles = dist
+                                break
+                        except:
+                            continue
+                    if distance_miles:
+                        break
+            
+            if not time_minutes:
+                time_patterns = [
+                    r'(\d+)\s*(?:min(?:utes?)?|mins?)\b',
+                    r'(\d+)\s*min\b',
+                    r'Time[:\s]+(\d+)\s*(?:min(?:utes?)?|mins?)',
+                ]
+                for pattern in time_patterns:
+                    matches = re.findall(pattern, page_text, re.I)
+                    for match in matches:
+                        try:
+                            t = int(match)
+                            if 1 <= t <= 300:
+                                time_minutes = t
+                                break
+                        except:
+                            continue
+                    if time_minutes:
+                        break
+            
             page.close()
-        except:
-            pass
-        return None, None
+            
+            # If we got both, we're done
+            if distance_miles and time_minutes:
+                return distance_miles, time_minutes
+                
+        except Exception as e:
+            try:
+                page.close()
+            except:
+                pass
+            continue  # Try next method
+    
+    # If all methods failed, return None
+    return distance_miles, time_minutes
 
 
 def compute_proximity_score(driving_time_minutes: Optional[float]) -> float:
@@ -560,9 +625,21 @@ def main():
         except:
             pass
     
-    # Find dealers that need fetching
-    dealers_to_fetch = [d for d in unique_dealers if d not in dealer_info or dealer_info.get(d) is None]
-    print(f"Need to fetch {len(dealers_to_fetch)} dealers ({len(unique_dealers) - len(dealers_to_fetch)} cached)")
+    # Find dealers that need fetching (not in cache, excluded, or missing address/distance)
+    dealers_to_fetch = []
+    for d in unique_dealers:
+        if d not in dealer_info:
+            dealers_to_fetch.append(d)
+        elif dealer_info.get(d) is None:
+            # Excluded - skip
+            continue
+        elif isinstance(dealer_info.get(d), dict):
+            info = dealer_info[d]
+            # Need to fetch if missing address, or has address but missing distance
+            if not info.get('address') or (info.get('address') and not info.get('distance_miles')):
+                dealers_to_fetch.append(d)
+    
+    print(f"Need to fetch {len(dealers_to_fetch)} dealers ({len(unique_dealers) - len(dealers_to_fetch)} fully cached)")
     
     if dealers_to_fetch:
         with sync_playwright() as p:
@@ -572,11 +649,25 @@ def main():
             for i, dealer_name in enumerate(dealers_to_fetch, 1):
                 print(f"[{i}/{len(dealers_to_fetch)}] Processing: {dealer_name}")
                 
-                # Get reviews and address
-                reviews_data = get_google_reviews_and_address(dealer_name, context)
-                address = reviews_data['address']
-                rating = reviews_data['rating']
-                review_count = reviews_data['review_count']
+                # Check if we already have some data for this dealer
+                existing_info = dealer_info.get(dealer_name, {}) if isinstance(dealer_info.get(dealer_name), dict) else {}
+                existing_address = existing_info.get('address')
+                existing_rating = existing_info.get('rating')
+                existing_review_count = existing_info.get('review_count')
+                
+                # Get reviews and address (skip if we already have them)
+                if existing_address and existing_rating is not None:
+                    # Use existing data
+                    address = existing_address
+                    rating = existing_rating
+                    review_count = existing_review_count
+                    print(f"  Using cached address and reviews")
+                else:
+                    # Fetch new data
+                    reviews_data = get_google_reviews_and_address(dealer_name, context)
+                    address = reviews_data['address'] or existing_address
+                    rating = reviews_data['rating'] if reviews_data['rating'] is not None else existing_rating
+                    review_count = reviews_data['review_count'] if reviews_data['review_count'] is not None else existing_review_count
                 
                 # Apply exclusion rules
                 if address and EXCLUDE_ADDRESS.lower() in address.lower():
